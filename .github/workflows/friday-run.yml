@@ -1,0 +1,59 @@
+name: Friday Run Bot
+
+on:
+  schedule:
+    - cron: '0 12 * * 4'   # 20:00 SGT Thursday -> prompt (weather + 3 polls)
+    - cron: '30 13 * * 4'  # 21:30 SGT Thursday -> check (summary or reminder)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'prompt or check'
+        required: true
+        default: 'prompt'
+
+permissions:
+  contents: write
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" = "12" ]; then
+              echo "mode=prompt" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=check" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Run bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PARTICIPANTS: ${{ secrets.PARTICIPANTS }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: python bot.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "friday-run-bot"
+          git config user.email "actions@github.com"
+          git add state.json
+          git commit -m "Update state" || echo "No changes to commit"
+          git push
