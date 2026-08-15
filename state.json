@@ -1,6 +1,21 @@
 {
   "paused": false,
-  "locations": ["MBS", "Bishan", "ECP", "Stadium"],
-  "cycle": null,
+  "locations": [
+    "MBS",
+    "Bishan",
+    "ECP",
+    "Stadium"
+  ],
+  "cycle": {
+    "date_label": "Sunday 16 Aug",
+    "rainy": true,
+    "polls": {
+      "join": "6053030558533943937",
+      "ewt": "6053030558533943938",
+      "area": "6053030558533943939",
+      "meet": "6053030558533943940"
+    },
+    "done": false
+  },
   "update_offset": 0
 }
