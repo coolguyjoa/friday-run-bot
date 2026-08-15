@@ -1,0 +1,45 @@
+name: Admin Controls
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to do'
+        required: true
+        type: choice
+        options:
+          - pause
+          - resume
+          - addlocation
+      location:
+        description: 'New location name (only needed for addlocation)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  admin-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run action
+        env:
+          ACTION: ${{ github.event.inputs.action }}
+          LOCATION: ${{ github.event.inputs.location }}
+        run: python admin_action.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "friday-run-bot"
+          git config user.email "actions@github.com"
+          git add state.json
+          git commit -m "Admin: ${{ github.event.inputs.action }} ${{ github.event.inputs.location }}" || echo "No changes"
+          git push
