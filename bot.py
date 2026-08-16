@@ -1,14 +1,15 @@
 """
-Friday Run Bot v4 — two-touch design, no always-on host needed.
+Friday Run Bot — final version.
 
-MODE=prompt  (runs 8:00pm SGT Thursday) -> weather + 4 polls, all at once
-             (joining? / end-work time / area / meet time)
-MODE=check   (runs 9:30pm SGT Thursday) -> if everyone who's joining has
-             answered everything, post the summary; else nudge who's missing what
+MODE=prompt  (runs 7:00pm SGT Thursday) -> weather + 3 polls, all at once
+             (joining? / area / meet time)
+MODE=check   (runs 9:00pm SGT Thursday) -> 
+             - if anyone picked "Event Cancelled" -> announce cancellation, stop
+             - if everyone joining has answered area+meet -> post summary
+             - else -> nudge exactly who's missing what
 
-Anyone who answers "No" on the joining poll is excluded from the
-end-work-time / area / meet-time chase, and is simply listed as not
-joining in the final summary.
+Votes can be changed freely — Telegram polls support this natively as
+long as the poll is never closed, which this bot never does.
 
 Kill switch and locations are controlled by a separate admin workflow
 (admin_action.py) that edits state.json — this script just reads it.
@@ -41,9 +42,13 @@ STATE_FILE = "state.json"
 SGT = timezone(timedelta(hours=8))
 LAT, LON = 1.3868, 103.8449  # near Yio Chu Kang
 
-JOIN_OPTIONS = ["Yes", "No"]
-EWT_OPTIONS = ["Before 6pm", "6-7pm", "7-8pm", "After 8pm"]
-MEET_TIME_OPTIONS = ["6:30pm", "7:00pm", "7:30pm", "8:00pm"]
+JOIN_OPTIONS = ["Yes", "No", "Event Cancelled"]
+MEET_TIME_OPTIONS = [
+    "6:00pm", "6:30pm", "7:00pm", "7:30pm",
+    "8:00pm", "8:30pm", "9:00pm",
+    "I will meet somewhere else",
+]
+RAIN_THRESHOLD = 75  # percent
 
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -86,11 +91,11 @@ def get_friday_weather():
     temps = resp["hourly"]["temperature_2m"]
     rain = resp["hourly"]["precipitation_probability"]
     lines, rainy = [], False
-    for h in [18, 19, 20, 21, 22]:
+    for h in [18, 19, 20, 21]:
         idx = hours.index(f"{date_str}T{h:02d}:00")
         r, t = rain[idx], temps[idx]
         icon = "\U0001F327" if r >= 50 else ("\u26C5" if r >= 20 else "\u2600")
-        if r >= 50:
+        if r >= RAIN_THRESHOLD:
             rainy = True
         lines.append(f"{h}:00 {icon}  {t:.0f}\u00b0C, {r}% rain")
     return "\n".join(lines), rainy, friday.strftime("%A %d %b")
@@ -103,35 +108,31 @@ def run_prompt(state):
 
     weather_text, rainy, date_label = get_friday_weather()
     rain_note = (
-        "\U0001F327 Rain likely \u2014 default run spot will be *Singapore Stadium* (sheltered) unless it clears up."
+        f"\U0001F327 Rain \u2265{RAIN_THRESHOLD}% likely \u2014 default run spot will be *Singapore Stadium* (sheltered)."
         if rainy
-        else "\u2600 Looking dry for the run."
+        else "\u2600 Looking fine for the run."
     )
     tg(
         "sendMessage",
         chat_id=CHAT_ID,
-        text=f"*Friday Run Check-in \u2014 {date_label}*\n\n*Weather:*\n{weather_text}\n\n{rain_note}\n\nFill in the polls below \U0001F447 (reminder at 9:30pm if anything's missing)",
+        text=f"*Friday Run Check-in \u2014 {date_label}*\n\n*Weather:*\n{weather_text}\n\n{rain_note}\n\nFill in the polls below \U0001F447 (you can change your vote anytime; reminder at 9pm if anything's missing)",
         parse_mode="Markdown",
     )
 
     area_options = state["locations"] + ["Others"]
-    meet_options = MEET_TIME_OPTIONS + ["Others"]
 
     poll_join = tg("sendPoll", chat_id=CHAT_ID, question="Are you able to join Friday's run?",
                    options=json.dumps(JOIN_OPTIONS), is_anonymous=False)
-    poll_ewt = tg("sendPoll", chat_id=CHAT_ID, question="What time do you end work Friday?",
-                  options=json.dumps(EWT_OPTIONS), is_anonymous=False)
     poll_area = tg("sendPoll", chat_id=CHAT_ID, question="Where should we run?",
                    options=json.dumps(area_options), is_anonymous=False)
-    poll_meet = tg("sendPoll", chat_id=CHAT_ID, question="What time to meet at Yio Chu Kang MRT?",
-                   options=json.dumps(meet_options), is_anonymous=False)
+    poll_meet = tg("sendPoll", chat_id=CHAT_ID, question="What time to meet at Yio Chu Kang MRT? (if you're meeting there)",
+                   options=json.dumps(MEET_TIME_OPTIONS), is_anonymous=False)
 
     state["cycle"] = {
         "date_label": date_label,
         "rainy": rainy,
         "polls": {
             "join": poll_join["poll"]["id"],
-            "ewt": poll_ewt["poll"]["id"],
             "area": poll_area["poll"]["id"],
             "meet": poll_meet["poll"]["id"],
         },
@@ -141,10 +142,11 @@ def run_prompt(state):
 
 
 def collect_answers(state, offset):
-    """Read poll_answer updates since `offset`, return {stage: {user_id: choice}} and the new offset."""
+    """Read poll_answer updates since `offset`. Later updates overwrite earlier
+    ones for the same user+poll, so changed votes are picked up automatically."""
     poll_ids = state["cycle"]["polls"]
     id_to_stage = {v: k for k, v in poll_ids.items()}
-    answers = {"join": {}, "ewt": {}, "area": {}, "meet": {}}
+    answers = {"join": {}, "area": {}, "meet": {}}
 
     updates = tg("getUpdates", offset=offset, allowed_updates=json.dumps(["poll_answer"]))
     new_offset = offset
@@ -157,14 +159,16 @@ def collect_answers(state, offset):
         if not stage:
             continue
         uid = pa["user"]["id"]
+        options = {
+            "join": JOIN_OPTIONS,
+            "area": state["locations"] + ["Others"],
+            "meet": MEET_TIME_OPTIONS,
+        }[stage]
         if pa["option_ids"]:
-            options = {
-                "join": JOIN_OPTIONS,
-                "ewt": EWT_OPTIONS,
-                "area": state["locations"] + ["Others"],
-                "meet": MEET_TIME_OPTIONS + ["Others"],
-            }[stage]
             answers[stage][uid] = options[pa["option_ids"][0]]
+        else:
+            # user retracted their vote
+            answers[stage].pop(uid, None)
     return answers, new_offset
 
 
@@ -179,6 +183,18 @@ def run_check(state):
     state["update_offset"] = new_offset
     save_state(state)
 
+    if "Event Cancelled" in answers["join"].values():
+        who = [PARTICIPANTS.get(uid, "Someone") for uid, v in answers["join"].items() if v == "Event Cancelled"]
+        tg(
+            "sendMessage",
+            chat_id=CHAT_ID,
+            text=f"\u274C *Friday run cancelled* (called by {', '.join(who)}).",
+            parse_mode="Markdown",
+        )
+        cycle["done"] = True
+        save_state(state)
+        return
+
     joining = {uid for uid, choice in answers["join"].items() if choice == "Yes"}
     declined = {uid for uid, choice in answers["join"].items() if choice == "No"}
 
@@ -189,7 +205,7 @@ def run_check(state):
             continue
         if uid in declined:
             continue
-        for stage, label in [("ewt", "end-work time"), ("area", "run area"), ("meet", "meet time")]:
+        for stage, label in [("area", "run area"), ("meet", "meet time")]:
             if uid not in answers[stage]:
                 missing.append(f"{name} \u2014 {label}")
 
@@ -203,19 +219,18 @@ def run_check(state):
         return
 
     area_votes = [answers["area"][uid] for uid in joining if uid in answers["area"]]
-    meet_votes = [answers["meet"][uid] for uid in joining if uid in answers["meet"]]
     final_area = "Singapore Stadium (sheltered \u2014 rain called it)" if cycle["rainy"] else (
         Counter(area_votes).most_common(1)[0][0] if area_votes else "TBD"
     )
-    final_meet = Counter(meet_votes).most_common(1)[0][0] if meet_votes else "TBD"
 
     lines = [f"*Summary \u2014 {cycle['date_label']}*", ""]
     for uid, name in PARTICIPANTS.items():
         if uid in declined:
             lines.append(f"{name}: not joining")
         elif uid in joining:
-            lines.append(f"{name}: ends {answers['ewt'][uid]}, wants {answers['area'][uid]}, meet {answers['meet'][uid]}")
-    lines += ["", f"\U0001F4CD Run spot: *{final_area}*", f"\U0001F550 Meet at Yio Chu Kang MRT: *{final_meet}*"]
+            meet = answers["meet"].get(uid, "?")
+            lines.append(f"{name}: wants {answers['area'][uid]}, meet {meet}")
+    lines += ["", f"\U0001F4CD Run spot: *{final_area}*"]
 
     tg("sendMessage", chat_id=CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
     cycle["done"] = True
