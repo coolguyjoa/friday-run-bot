@@ -3,11 +3,13 @@ name: Friday Run Bot
 on:
   schedule:
     - cron: '0 11 * * 4'   # 19:00 SGT Thursday -> prompt (weather + 3 polls)
-    - cron: '0 13 * * 4'   # 21:00 SGT Thursday -> check (summary or reminder)
+    - cron: '0 12 * * 4'   # 20:00 SGT Thursday -> check1 (summary if everyone's done)
+    - cron: '30 12 * * 4'  # 20:30 SGT Thursday -> remind (nudge if still incomplete)
+    - cron: '0 13 * * 4'   # 21:00 SGT Thursday -> final (forced summary either way)
   workflow_dispatch:
     inputs:
       mode:
-        description: 'prompt or check'
+        description: 'prompt, check1, remind, or final'
         required: true
         default: 'prompt'
 
@@ -35,10 +37,15 @@ jobs:
             echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
           else
             HOUR=$(date -u +%H)
+            MINUTE=$(date -u +%M)
             if [ "$HOUR" = "11" ]; then
               echo "mode=prompt" >> "$GITHUB_OUTPUT"
+            elif [ "$HOUR" = "12" ] && [ "$MINUTE" = "00" ]; then
+              echo "mode=check1" >> "$GITHUB_OUTPUT"
+            elif [ "$HOUR" = "12" ] && [ "$MINUTE" = "30" ]; then
+              echo "mode=remind" >> "$GITHUB_OUTPUT"
             else
-              echo "mode=check" >> "$GITHUB_OUTPUT"
+              echo "mode=final" >> "$GITHUB_OUTPUT"
             fi
           fi
 
