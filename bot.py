@@ -46,7 +46,7 @@ JOIN_OPTIONS = ["Yes", "No", "Event Cancelled"]
 MEET_TIME_OPTIONS = [
     "6:00pm", "6:30pm", "7:00pm", "7:30pm",
     "8:00pm", "8:30pm", "9:00pm",
-    "I will meet somewhere else",
+    "I can meet somewhere else",
 ]
 RAIN_THRESHOLD = 75  # percent
 
