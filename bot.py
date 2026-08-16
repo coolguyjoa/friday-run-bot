@@ -1,12 +1,16 @@
 """
-Friday Run Bot — final version.
+Friday Run Bot — final version (4 scheduled touches).
 
-MODE=prompt  (runs 7:00pm SGT Thursday) -> weather + 3 polls, all at once
-             (joining? / area / meet time)
-MODE=check   (runs 9:00pm SGT Thursday) -> 
-             - if anyone picked "Event Cancelled" -> announce cancellation, stop
-             - if everyone joining has answered area+meet -> post summary
-             - else -> nudge exactly who's missing what
+MODE=prompt  (7:00pm SGT Thu) -> weather + 3 polls, all at once (join / area / meet time)
+MODE=check1  (8:00pm SGT Thu) -> if everyone's done (or cancelled), post summary now.
+                                  If not, stay silent — no message sent.
+MODE=remind  (8:30pm SGT Thu) -> if still not done, send a "still missing" nudge.
+MODE=final   (9:00pm SGT Thu) -> post the summary no matter what, marking anyone
+                                  who never answered as "no response".
+
+A vote for "Event Cancelled" on the join poll, seen at any of the three
+check-type runs, immediately posts a cancellation message and ends the
+cycle — no further chasing.
 
 Votes can be changed freely — Telegram polls support this natively as
 long as the poll is never closed, which this bot never does.
@@ -18,7 +22,7 @@ Env vars required:
   TELEGRAM_BOT_TOKEN
   TELEGRAM_CHAT_ID   (negative number, the group chat)
   PARTICIPANTS       "id:Name,id:Name,id:Name" — the fixed roster of runners
-  MODE               "prompt" or "check"
+  MODE               "prompt" | "check1" | "remind" | "final"
 """
 
 import os
@@ -44,9 +48,8 @@ LAT, LON = 1.3868, 103.8449  # near Yio Chu Kang
 
 JOIN_OPTIONS = ["Yes", "No", "Event Cancelled"]
 MEET_TIME_OPTIONS = [
-    "6:00pm", "6:30pm", "7:00pm", "7:30pm",
-    "8:00pm", "8:30pm", "9:00pm",
-    "I can meet somewhere else",
+    "6pm - 7pm", "7pm - 8pm", "8pm - 9pm", "9pm - 10pm",
+    "I'm okay to meet somewhere else",
 ]
 RAIN_THRESHOLD = 75  # percent
 
@@ -115,7 +118,11 @@ def run_prompt(state):
     tg(
         "sendMessage",
         chat_id=CHAT_ID,
-        text=f"*Friday Run Check-in \u2014 {date_label}*\n\n*Weather:*\n{weather_text}\n\n{rain_note}\n\nFill in the polls below \U0001F447 (you can change your vote anytime; reminder at 9pm if anything's missing)",
+        text=(
+            f"*Friday Run Check-in \u2014 {date_label}*\n\n*Weather:*\n{weather_text}\n\n{rain_note}\n\n"
+            f"Fill in the polls below \U0001F447 (you can change your vote anytime)\n"
+            f"First summary attempt 8pm, reminder 8:30pm if needed, final summary 9pm."
+        ),
         parse_mode="Markdown",
     )
 
@@ -167,14 +174,35 @@ def collect_answers(state, offset):
         if pa["option_ids"]:
             answers[stage][uid] = options[pa["option_ids"][0]]
         else:
-            # user retracted their vote
-            answers[stage].pop(uid, None)
+            answers[stage].pop(uid, None)  # vote retracted
     return answers, new_offset
 
 
-def run_check(state):
+def build_summary_lines(cycle, answers, joining, declined, force=False):
+    area_votes = [answers["area"][uid] for uid in joining if uid in answers["area"]]
+    final_area = "Singapore Stadium (sheltered \u2014 rain called it)" if cycle["rainy"] else (
+        Counter(area_votes).most_common(1)[0][0] if area_votes else "TBD"
+    )
+
+    lines = [f"*Summary \u2014 {cycle['date_label']}*", ""]
+    for uid, name in PARTICIPANTS.items():
+        if uid in declined:
+            lines.append(f"{name}: not joining")
+        elif uid in joining:
+            area = answers["area"].get(uid, "no response" if force else None)
+            meet = answers["meet"].get(uid, "no response" if force else None)
+            lines.append(f"{name}: wants {area}, meet {meet}")
+        elif force:
+            lines.append(f"{name}: no response")
+    lines += ["", f"\U0001F4CD Run spot: *{final_area}*"]
+    return lines
+
+
+def evaluate(state, mode):
+    """mode: 'check1' (silent if incomplete), 'remind' (nudge if incomplete),
+    'final' (force summary regardless)."""
     if state["paused"] or not state.get("cycle") or state["cycle"]["done"]:
-        print("Nothing to check.")
+        print("Nothing to do.")
         return
 
     cycle = state["cycle"]
@@ -185,12 +213,9 @@ def run_check(state):
 
     if "Event Cancelled" in answers["join"].values():
         who = [PARTICIPANTS.get(uid, "Someone") for uid, v in answers["join"].items() if v == "Event Cancelled"]
-        tg(
-            "sendMessage",
-            chat_id=CHAT_ID,
-            text=f"\u274C *Friday run cancelled* (called by {', '.join(who)}).",
-            parse_mode="Markdown",
-        )
+        tg("sendMessage", chat_id=CHAT_ID,
+           text=f"\u274C *Friday run cancelled* (called by {', '.join(who)}).",
+           parse_mode="Markdown")
         cycle["done"] = True
         save_state(state)
         return
@@ -209,39 +234,36 @@ def run_check(state):
             if uid not in answers[stage]:
                 missing.append(f"{name} \u2014 {label}")
 
-    if missing:
-        tg(
-            "sendMessage",
-            chat_id=CHAT_ID,
-            text="\u23F0 *Still missing:*\n" + "\n".join(missing) + "\n\nPlease fill in the polls above \U0001F446",
-            parse_mode="Markdown",
-        )
+    if not missing:
+        lines = build_summary_lines(cycle, answers, joining, declined)
+        tg("sendMessage", chat_id=CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
+        cycle["done"] = True
+        save_state(state)
         return
 
-    area_votes = [answers["area"][uid] for uid in joining if uid in answers["area"]]
-    final_area = "Singapore Stadium (sheltered \u2014 rain called it)" if cycle["rainy"] else (
-        Counter(area_votes).most_common(1)[0][0] if area_votes else "TBD"
-    )
+    if mode == "check1":
+        print("Incomplete at 8pm check — staying silent.")
+        return
 
-    lines = [f"*Summary \u2014 {cycle['date_label']}*", ""]
-    for uid, name in PARTICIPANTS.items():
-        if uid in declined:
-            lines.append(f"{name}: not joining")
-        elif uid in joining:
-            meet = answers["meet"].get(uid, "?")
-            lines.append(f"{name}: wants {answers['area'][uid]}, meet {meet}")
-    lines += ["", f"\U0001F4CD Run spot: *{final_area}*"]
+    if mode == "remind":
+        tg("sendMessage", chat_id=CHAT_ID,
+           text="\u23F0 *Still missing:*\n" + "\n".join(missing) + "\n\nFinal summary at 9pm \u2014 please fill in above \U0001F446",
+           parse_mode="Markdown")
+        return
 
-    tg("sendMessage", chat_id=CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
-    cycle["done"] = True
-    save_state(state)
+    if mode == "final":
+        lines = build_summary_lines(cycle, answers, joining, declined, force=True)
+        tg("sendMessage", chat_id=CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
+        cycle["done"] = True
+        save_state(state)
+        return
 
 
 if __name__ == "__main__":
     state = load_state()
     if MODE == "prompt":
         run_prompt(state)
-    elif MODE == "check":
-        run_check(state)
+    elif MODE in ("check1", "remind", "final"):
+        evaluate(state, MODE)
     else:
         raise ValueError(f"Unknown MODE: {MODE}")
