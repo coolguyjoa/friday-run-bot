@@ -2,8 +2,8 @@ name: Friday Run Bot
 
 on:
   schedule:
-    - cron: '0 12 * * 4'   # 20:00 SGT Thursday -> prompt (weather + 3 polls)
-    - cron: '30 13 * * 4'  # 21:30 SGT Thursday -> check (summary or reminder)
+    - cron: '0 11 * * 4'   # 19:00 SGT Thursday -> prompt (weather + 3 polls)
+    - cron: '0 13 * * 4'   # 21:00 SGT Thursday -> check (summary or reminder)
   workflow_dispatch:
     inputs:
       mode:
@@ -35,7 +35,7 @@ jobs:
             echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
           else
             HOUR=$(date -u +%H)
-            if [ "$HOUR" = "12" ]; then
+            if [ "$HOUR" = "11" ]; then
               echo "mode=prompt" >> "$GITHUB_OUTPUT"
             else
               echo "mode=check" >> "$GITHUB_OUTPUT"
