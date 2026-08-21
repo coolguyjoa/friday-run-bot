@@ -1,19 +1,23 @@
 """
-Friday Run Bot — final version (4 scheduled touches).
+Friday Run Bot — final version (4 scheduled touches), with persistent answers.
 
-MODE=prompt  (7:00pm SGT Thu) -> weather + 3 polls, all at once (join / area / meet time)
-MODE=check1  (8:00pm SGT Thu) -> if everyone's done (or cancelled), post summary now.
+MODE=prompt  (5:30pm SGT Thu) -> weather + 3 polls, all at once (join / area / meet time)
+MODE=check1  (7:00pm SGT Thu) -> if everyone's done (or cancelled), post summary now.
                                   If not, stay silent — no message sent.
-MODE=remind  (8:30pm SGT Thu) -> if still not done, send a "still missing" nudge.
+MODE=remind  (8:00pm SGT Thu) -> if still not done, send a "still missing" nudge.
 MODE=final   (9:00pm SGT Thu) -> post the summary no matter what, marking anyone
                                   who never answered as "no response".
 
-A vote for "Event Cancelled" on the join poll, seen at any of the three
-check-type runs, immediately posts a cancellation message and ends the
-cycle — no further chasing.
+IMPORTANT: answers are accumulated permanently in state.json as they come in
+(state["cycle"]["answers"]) — each run only reads *new* votes from Telegram
+since the last run and merges them in, so a vote cast at 7:10pm is still
+remembered at the 9pm final check even though Telegram only reports it once.
 
-Votes can be changed freely — Telegram polls support this natively as
-long as the poll is never closed, which this bot never does.
+A vote for "Event Cancelled" on the join poll, seen at any of the three
+check-type runs, immediately posts a cancellation message and ends the cycle.
+
+Votes can be changed freely — Telegram polls support this natively as long
+as the poll is never closed, which this bot never does.
 
 Kill switch and locations are controlled by a separate admin workflow
 (admin_action.py) that edits state.json — this script just reads it.
@@ -40,7 +44,7 @@ PARTICIPANTS = {}
 for pair in os.environ.get("PARTICIPANTS", "").split(","):
     if ":" in pair:
         uid, name = pair.split(":", 1)
-        PARTICIPANTS[int(uid.strip())] = name.strip()
+        PARTICIPANTS[str(uid.strip())] = name.strip()  # keys are STRINGS throughout
 
 STATE_FILE = "state.json"
 SGT = timezone(timedelta(hours=8))
@@ -121,7 +125,7 @@ def run_prompt(state):
         text=(
             f"*Friday Run Check-in \u2014 {date_label}*\n\n*Weather:*\n{weather_text}\n\n{rain_note}\n\n"
             f"Fill in the polls below \U0001F447 (you can change your vote anytime)\n"
-            f"First summary attempt 8pm, reminder 8:30pm if needed, final summary 9pm."
+            f"First summary attempt 7pm, reminder 8pm if needed, final summary 9pm."
         ),
         parse_mode="Markdown",
     )
@@ -143,18 +147,24 @@ def run_prompt(state):
             "area": poll_area["poll"]["id"],
             "meet": poll_meet["poll"]["id"],
         },
+        "answers": {"join": {}, "area": {}, "meet": {}},  # persists across every future run
         "done": False,
     }
     save_state(state)
 
 
-def collect_answers(state, offset):
-    """Read poll_answer updates since `offset`. Later updates overwrite earlier
-    ones for the same user+poll, so changed votes are picked up automatically."""
+def apply_new_answers(state):
+    """Fetch NEW poll_answer updates since the saved offset and merge them
+    directly into state['cycle']['answers'], which persists forever. This is
+    the fix: previous versions computed answers fresh each run and never
+    saved them, so anyone whose vote was consumed by an earlier run
+    'disappeared' from later runs. Now every vote is remembered permanently
+    once seen, and a retracted vote removes that person's entry."""
     poll_ids = state["cycle"]["polls"]
     id_to_stage = {v: k for k, v in poll_ids.items()}
-    answers = {"join": {}, "area": {}, "meet": {}}
+    persistent = state["cycle"]["answers"]
 
+    offset = state.get("update_offset", 0)
     updates = tg("getUpdates", offset=offset, allowed_updates=json.dumps(["poll_answer"]))
     new_offset = offset
     for u in updates:
@@ -165,20 +175,23 @@ def collect_answers(state, offset):
         stage = id_to_stage.get(pa["poll_id"])
         if not stage:
             continue
-        uid = pa["user"]["id"]
+        uid = str(pa["user"]["id"])
         options = {
             "join": JOIN_OPTIONS,
             "area": state["locations"] + ["Others"],
             "meet": MEET_TIME_OPTIONS,
         }[stage]
         if pa["option_ids"]:
-            answers[stage][uid] = options[pa["option_ids"][0]]
+            persistent[stage][uid] = options[pa["option_ids"][0]]
         else:
-            answers[stage].pop(uid, None)  # vote retracted
-    return answers, new_offset
+            persistent[stage].pop(uid, None)  # vote retracted
+
+    state["update_offset"] = new_offset
+    save_state(state)
 
 
-def build_summary_lines(cycle, answers, joining, declined, force=False):
+def build_summary_lines(cycle, joining, declined, force=False):
+    answers = cycle["answers"]
     area_votes = [answers["area"][uid] for uid in joining if uid in answers["area"]]
     final_area = "Singapore Stadium (sheltered \u2014 rain called it)" if cycle["rainy"] else (
         Counter(area_votes).most_common(1)[0][0] if area_votes else "TBD"
@@ -205,11 +218,9 @@ def evaluate(state, mode):
         print("Nothing to do.")
         return
 
+    apply_new_answers(state)
     cycle = state["cycle"]
-    offset = state.get("update_offset", 0)
-    answers, new_offset = collect_answers(state, offset)
-    state["update_offset"] = new_offset
-    save_state(state)
+    answers = cycle["answers"]
 
     if "Event Cancelled" in answers["join"].values():
         who = [PARTICIPANTS.get(uid, "Someone") for uid, v in answers["join"].items() if v == "Event Cancelled"]
@@ -235,7 +246,7 @@ def evaluate(state, mode):
                 missing.append(f"{name} \u2014 {label}")
 
     if not missing:
-        lines = build_summary_lines(cycle, answers, joining, declined)
+        lines = build_summary_lines(cycle, joining, declined)
         tg("sendMessage", chat_id=CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
         cycle["done"] = True
         save_state(state)
@@ -252,7 +263,7 @@ def evaluate(state, mode):
         return
 
     if mode == "final":
-        lines = build_summary_lines(cycle, answers, joining, declined, force=True)
+        lines = build_summary_lines(cycle, joining, declined, force=True)
         tg("sendMessage", chat_id=CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
         cycle["done"] = True
         save_state(state)
