@@ -15,11 +15,20 @@
       "meet": "6089321722220118807"
     },
     "answers": {
-      "join": {},
-      "area": {},
-      "meet": {}
+      "join": {
+        "151319984": "Yes",
+        "849631085": "Yes"
+      },
+      "area": {
+        "151319984": "MBS",
+        "849631085": "MBS"
+      },
+      "meet": {
+        "151319984": "6pm - 7pm",
+        "849631085": "I'm okay to meet somewhere else"
+      }
     },
     "done": false
   },
-  "update_offset": 832081482
+  "update_offset": 832081496
 }
