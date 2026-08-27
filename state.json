@@ -7,14 +7,19 @@
     "Stadium"
   ],
   "cycle": {
-    "date_label": "Friday 21 Aug",
+    "date_label": "Friday 28 Aug",
     "rainy": false,
     "polls": {
-      "join": "6068655937319601163",
-      "area": "6068655937319601164",
-      "meet": "6068655937319601165"
+      "join": "6089321722220118805",
+      "area": "6089321722220118806",
+      "meet": "6089321722220118807"
     },
-    "done": true
+    "answers": {
+      "join": {},
+      "area": {},
+      "meet": {}
+    },
+    "done": false
   },
   "update_offset": 832081482
 }
