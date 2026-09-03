@@ -7,34 +7,19 @@
     "Stadium"
   ],
   "cycle": {
-    "date_label": "Friday 28 Aug",
+    "date_label": "Friday 04 Sep",
     "rainy": false,
     "polls": {
-      "join": "6089321722220118805",
-      "area": "6089321722220118806",
-      "meet": "6089321722220118807"
+      "join": "6109183283084395431",
+      "area": "6109183283084395432",
+      "meet": "6109183283084395433"
     },
     "answers": {
-      "join": {
-        "151319984": "Yes",
-        "849631085": "Yes",
-        "248729263": "Yes",
-        "264620708": "Yes"
-      },
-      "area": {
-        "849631085": "MBS",
-        "248729263": "ECP",
-        "151319984": "ECP",
-        "264620708": "MBS"
-      },
-      "meet": {
-        "151319984": "6pm - 7pm",
-        "849631085": "I'm okay to meet somewhere else",
-        "248729263": "7pm - 8pm",
-        "264620708": "6pm - 7pm"
-      }
+      "join": {},
+      "area": {},
+      "meet": {}
     },
-    "done": true
+    "done": false
   },
   "update_offset": 832081514
 }
