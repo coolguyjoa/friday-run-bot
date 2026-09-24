@@ -7,31 +7,19 @@
     "Stadium"
   ],
   "cycle": {
-    "date_label": "Friday 18 Sep",
-    "rainy": true,
+    "date_label": "Friday 25 Sep",
+    "rainy": false,
     "polls": {
-      "join": "6152478486163359161",
-      "area": "6152478486163359162",
-      "meet": "6152478486163359163"
+      "join": "6172321325265191474",
+      "area": "6172321325265191475",
+      "meet": "6172321325265191476"
     },
     "answers": {
-      "join": {
-        "264620708": "Yes",
-        "248729263": "Yes",
-        "151319984": "Yes"
-      },
-      "area": {
-        "264620708": "Stadium",
-        "248729263": "MBS",
-        "151319984": "ECP"
-      },
-      "meet": {
-        "264620708": "6pm - 7pm",
-        "248729263": "7pm - 8pm",
-        "151319984": "7pm - 8pm"
-      }
+      "join": {},
+      "area": {},
+      "meet": {}
     },
-    "done": true
+    "done": false
   },
   "update_offset": 832081552
 }
