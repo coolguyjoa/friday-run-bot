@@ -15,11 +15,18 @@
       "meet": "6319039435321115280"
     },
     "answers": {
-      "join": {},
-      "area": {},
-      "meet": {}
+      "join": {
+        "151319984": "Yes",
+        "849631085": "No"
+      },
+      "area": {
+        "151319984": "Bishan"
+      },
+      "meet": {
+        "151319984": "6pm - 7pm"
+      }
     },
     "done": false
   },
-  "update_offset": 832081593
+  "update_offset": 832081597
 }
