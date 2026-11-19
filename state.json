@@ -15,11 +15,13 @@
       "meet": "6336855835838251893"
     },
     "answers": {
-      "join": {},
+      "join": {
+        "151319984": "Event Cancelled"
+      },
       "area": {},
       "meet": {}
     },
-    "done": false
+    "done": true
   },
-  "update_offset": 832081602
+  "update_offset": 832081606
 }
