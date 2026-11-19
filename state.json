@@ -7,29 +7,19 @@
     "Stadium"
   ],
   "cycle": {
-    "date_label": "Friday 13 Nov",
+    "date_label": "Friday 20 Nov",
     "rainy": true,
     "polls": {
-      "join": "6319039435321115278",
-      "area": "6319039435321115279",
-      "meet": "6319039435321115280"
+      "join": "6336855835838251891",
+      "area": "6336855835838251892",
+      "meet": "6336855835838251893"
     },
     "answers": {
-      "join": {
-        "151319984": "Yes",
-        "849631085": "No",
-        "248729263": "Yes"
-      },
-      "area": {
-        "151319984": "Bishan",
-        "248729263": "Bishan"
-      },
-      "meet": {
-        "151319984": "6pm - 7pm",
-        "248729263": "7pm - 8pm"
-      }
+      "join": {},
+      "area": {},
+      "meet": {}
     },
-    "done": true
+    "done": false
   },
   "update_offset": 832081602
 }
